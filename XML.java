@@ -25,7 +25,6 @@ SOFTWARE.
 */
 
 import java.util.Iterator;
-import java.util.Map.Entry;
 
 /**
  * This provides static methods to convert an XML text into a JSONObject, and to
@@ -141,7 +140,7 @@ public class XML {
                 if (mustEscape(cp)) {
                     sb.append("&#x");
                     sb.append(Integer.toHexString(cp));
-                    sb.append(';');
+                    sb.append(";");
                 } else {
                     sb.appendCodePoint(cp);
                 }
@@ -191,12 +190,36 @@ public class XML {
                 final int semic = string.indexOf(';', i);
                 if (semic > i) {
                     final String entity = string.substring(i + 1, semic);
-                    sb.append(XMLTokener.unescapeEntity(entity));
+                    if (entity.charAt(0) == '#') {
+                        int cp;
+                        if (entity.charAt(1) == 'x') {
+                            // hex encoded unicode
+                            cp = Integer.parseInt(entity.substring(2), 16);
+                        } else {
+                            // decimal encoded unicode
+                            cp = Integer.parseInt(entity.substring(1));
+                        }
+                        sb.appendCodePoint(cp);
+                    } else {
+                        if ("quot".equalsIgnoreCase(entity)) {
+                            sb.append('"');
+                        } else if ("amp".equalsIgnoreCase(entity)) {
+                            sb.append('&');
+                        } else if ("apos".equalsIgnoreCase(entity)) {
+                            sb.append('\'');
+                        } else if ("lt".equalsIgnoreCase(entity)) {
+                            sb.append('<');
+                        } else if ("gt".equalsIgnoreCase(entity)) {
+                            sb.append('>');
+                        } else {
+                            sb.append('&').append(entity).append(';');
+                        }
+                    }
                     // skip past the entity we just parsed.
                     i += entity.length() + 1;
                 } else {
                     // this shouldn't happen in most cases since the parser
-                    // errors on unclosed entries.
+                    // errors on unclosed enties.
                     sb.append(c);
                 }
             } else {
@@ -340,7 +363,7 @@ public class XML {
                             throw x.syntaxError("Missing value");
                         }
                         jsonobject.accumulate(string,
-                                keepStrings ? ((String)token) : stringToValue((String) token));
+                                keepStrings ? unescape((String)token) : stringToValue((String) token));
                         token = null;
                     } else {
                         jsonobject.accumulate(string, "");
@@ -372,7 +395,7 @@ public class XML {
                             string = (String) token;
                             if (string.length() > 0) {
                                 jsonobject.accumulate("content",
-                                        keepStrings ? string : stringToValue(string));
+                                        keepStrings ? unescape(string) : stringToValue(string));
                             }
 
                         } else if (token == LT) {
@@ -399,14 +422,18 @@ public class XML {
     }
     
     /**
-     * This method is the same as {@link JSONObject#stringToValue(String)}
+     * This method is the same as {@link JSONObject.stringToValue(String)}
      * except that this also tries to unescape String values.
      * 
      * @param string String to convert
      * @return JSON value of this string or the string
      */
     public static Object stringToValue(String string) {
-        return JSONObject.stringToValue(string);
+        Object ret = JSONObject.stringToValue(string);
+        if(ret instanceof String){
+            return unescape((String)ret);
+        }
+        return ret;
     }
 
     /**
@@ -481,12 +508,15 @@ public class XML {
      * @return A string.
      * @throws JSONException Thrown if there is an error parsing the string
      */
-    public static String toString(final Object object, final String tagName)
+    public static String toString(Object object, String tagName)
             throws JSONException {
         StringBuilder sb = new StringBuilder();
         JSONArray ja;
         JSONObject jo;
+        String key;
+        Iterator<String> keys;
         String string;
+        Object value;
 
         if (object instanceof JSONObject) {
 
@@ -507,6 +537,7 @@ public class XML {
                 } else if (value.getClass().isArray()) {
                     value = new JSONArray(value);
                 }
+                string = value instanceof String ? (String) value : null;
 
                 // Emit content in body
                 if ("content".equals(key)) {
@@ -573,19 +604,21 @@ public class XML {
 
         }
 
-        if (object != null && (object instanceof JSONArray ||  object.getClass().isArray())) {
-            if(object.getClass().isArray()) {
-                ja = new JSONArray(object);
-            } else {
+        if (object != null) {
+            if (object.getClass().isArray()) {
+                object = new JSONArray(object);
+            }
+
+            if (object instanceof JSONArray) {
                 ja = (JSONArray) object;
+                for (Object val : ja) {
+                    // XML does not have good support for arrays. If an array
+                    // appears in a place where XML is lacking, synthesize an
+                    // <array> element.
+                    sb.append(toString(val, tagName == null ? "array" : tagName));
+                }
+                return sb.toString();
             }
-            for (Object val : ja) {
-                // XML does not have good support for arrays. If an array
-                // appears in a place where XML is lacking, synthesize an
-                // <array> element.
-                sb.append(toString(val, tagName == null ? "array" : tagName));
-            }
-            return sb.toString();
         }
 
         string = (object == null) ? "null" : escape(object.toString());
