@@ -25,7 +25,7 @@ SOFTWARE.
 */
 
 import java.util.Enumeration;
-import java.util.Iterator;
+import java.util.Map.Entry;
 import java.util.Properties;
 
 /**
@@ -41,7 +41,7 @@ public class Property {
      * @throws JSONException
      */
     public static JSONObject toJSONObject(java.util.Properties properties) throws JSONException {
-        JSONObject jo = new JSONObject();
+        JSONObject jo = new JSONObject(properties == null ? 0 : properties.size());
         if (properties != null && !properties.isEmpty()) {
             Enumeration<?> enumProperties = properties.propertyNames();
             while(enumProperties.hasMoreElements()) {
@@ -61,10 +61,11 @@ public class Property {
     public static Properties toProperties(JSONObject jo)  throws JSONException {
         Properties  properties = new Properties();
         if (jo != null) {
-            Iterator<String> keys = jo.keys();
-            while (keys.hasNext()) {
-                String name = keys.next();
-                properties.put(name, jo.getString(name));
+            for (final Entry<String, ?> entry : jo.entrySet()) {
+                Object value = entry.getValue();
+                if (!JSONObject.NULL.equals(value)) {
+                	properties.put(entry.getKey(), value.toString());
+                }
             }
         }
         return properties;
